@@ -1,8 +1,8 @@
 __pycache__/
 *.pyc
 *.log
-_probe*
-_verify*
+# 临时/排查文件一律用下划线前缀，统一忽略（避免被 git add -A 带进仓库）
+_*
 .workbuddy/
 data/cache/
 # 凭证：绝不提交（公开仓库）
