@@ -81,14 +81,16 @@ def pick_provider():
     return None
 
 
-def _chat(prov, system, user, timeout=120):
+def _call(prov, system, user, timeout=120, force_json=True):
     body = {
         "model": prov["model"],
         "messages": [{"role": "system", "content": system},
                      {"role": "user", "content": user}],
         "temperature": 0.3,
-        "response_format": {"type": "json_object"},
+        "max_tokens": 2600,
     }
+    if force_json:
+        body["response_format"] = {"type": "json_object"}
     req = urllib.request.Request(
         prov["base"] + "/chat/completions", method="POST",
         data=json.dumps(body).encode("utf-8"),
@@ -97,20 +99,13 @@ def _chat(prov, system, user, timeout=120):
                  "User-Agent": "ai-chain-transmission"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read().decode("utf-8"))["choices"][0]["message"]["content"]
+            data = json.loads(r.read().decode("utf-8"))
+        return data["choices"][0]["message"]["content"], data.get("choices", [{}])[0].get("finish_reason")
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", "replace")[:200]
-        # 部分端点不支持 response_format，去掉重试一次
-        if e.code in (400, 422) and "response_format" in detail:
-            body.pop("response_format", None)
-            req2 = urllib.request.Request(
-                prov["base"] + "/chat/completions", method="POST",
-                data=json.dumps(body).encode("utf-8"),
-                headers={"Authorization": "Bearer " + prov["key"],
-                         "Content-Type": "application/json",
-                         "User-Agent": "ai-chain-transmission"})
-            with urllib.request.urlopen(req2, timeout=timeout) as r:
-                return json.loads(r.read().decode("utf-8"))["choices"][0]["message"]["content"]
+        # 部分端点不支持 response_format / max_tokens，去掉重试一次
+        if e.code in (400, 422) and force_json:
+            return _call(prov, system, user, timeout, force_json=False)
         raise RuntimeError(f"HTTP {e.code} {detail}")
 
 
@@ -127,10 +122,20 @@ def _parse(txt):
     except Exception:
         pass
     m = re.search(r"\{.*\}", txt, re.S)
-    if not m:
-        return None
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:
+            pass
+    # 输出被 max_tokens 截断时的补救：补齐未闭合的字符串/花括号
+    s = txt[txt.find("{"):] if "{" in txt else txt
+    s = re.sub(r",\s*$", "", s)
+    if s.count('"') % 2:
+        s += '"'
+    s += "}" * max(0, s.count("{") - s.count("}"))
+    s = re.sub(r",\s*([}\]])", r"\1", s)
     try:
-        return json.loads(m.group(0))
+        return json.loads(s)
     except Exception:
         return None
 
@@ -188,7 +193,7 @@ USER_TMPL = """以下是 {cn_date}（美股锚点 {us_date}）的 AI 产业链�
 
 
 def enrich(d, verbose=True):
-    """给 snapshot 附加 attribution 字段。失败返回原 data（不解构主流程）。"""
+    """给 snapshot 附加 attribution 字段。失败返回原 data（不阻断主流程）。"""
     prov = pick_provider()
     if not prov:
         if verbose:
@@ -199,26 +204,37 @@ def enrich(d, verbose=True):
     payload = build_payload(d)
     user = USER_TMPL.format(cn_date=d["cn_date"], us_date=d["us_date"],
                             payload=json.dumps(payload, ensure_ascii=False, indent=1))
-    try:
-        raw = _chat(prov, SYSTEM, user)
-        obj = _parse(raw)
-        if not obj or not obj.get("overview"):
-            raise RuntimeError("返回内容无法解析为预期 JSON")
-        d["attribution"] = {
-            "provider": prov["name"], "model": prov["model"],
-            "overview": str(obj.get("overview", "")).strip(),
-            "pivot": str(obj.get("pivot", "")).strip(),
-            "sectors": {k: str(v).strip()
-                        for k, v in (obj.get("sectors") or {}).items()},
-        }
-        if verbose:
-            print(f"attrib: {prov['name']}/{prov['model']} 已生成 "
-                  f"overview={len(d['attribution']['overview'])}字 "
-                  f"sectors={len(d['attribution']['sectors'])}/8")
-    except Exception as e:
-        d["attribution"] = None
-        if verbose:
-            print(f"attrib: 生成失败（已降级，不影响日报）: {str(e)[:200]}")
+    last_err = None
+    for attempt in (1, 2):
+        try:
+            raw, finish = _call(prov, SYSTEM, user)
+            obj = _parse(raw)
+            if not obj or not obj.get("overview"):
+                raise RuntimeError(
+                    f"返回内容无法解析为预期 JSON（finish_reason={finish}，"
+                    f"{len(raw or '')} 字）：{(raw or '')[:200]!r}")
+            d["attribution"] = {
+                "provider": prov["name"], "model": prov["model"],
+                "overview": str(obj.get("overview", "")).strip(),
+                "pivot": str(obj.get("pivot", "")).strip(),
+                "sectors": {k: str(v).strip()
+                            for k, v in (obj.get("sectors") or {}).items()},
+            }
+            if verbose:
+                print(f"attrib: {prov['name']}/{prov['model']} 已生成 "
+                      f"overview={len(d['attribution']['overview'])}字 "
+                      f"sectors={len(d['attribution']['sectors'])}/8"
+                      + ("（第 2 次尝试）" if attempt == 2 else ""))
+            return d
+        except Exception as e:
+            last_err = e
+            if attempt == 1:
+                # 第二次收紧指令：明确要求不留任何 JSON 之外的文字
+                user = ("只输出一个 JSON 对象，不要 markdown、不要解释、不要前后缀文字。"
+                        "所有字符串用中文，长度控制在一句话以内。\n\n" + user)
+    d["attribution"] = None
+    if verbose:
+        print(f"attrib: 生成失败（已降级，不影响日报）: {str(last_err)[:250]}")
     return d
 
 
