@@ -9,20 +9,29 @@
 
 核心约定：**远端树逐字节等于本地树；本地分支指向远端产出的 sha**
 --------------------------------------------------------------
-GitHub 的建 commit 接口会把时间戳归一化成 UTC（实测：传
-`2026-09-23T19:55:58+08:00`，落地为 `2026-09-23T11:55:58Z`），
-所以「让远端复现本地的 commit sha」是不可能的。但 **tree sha 是可以精确复现的**
-（实测完全一致）。于是策略是：
+GitHub 的建 commit 接口会保留你传入的时区偏移，但 `GET /git/commits/{sha}` 返回的
+`author.date` 一律**归一化成 `...Z`**（UTC 形式）用于展示。这一点很容易误判成
+「GitHub 把时间戳写成了 UTC」，实测并非如此 —— 穷举验证结果：
 
-  1. 本地 `git add -A` → `git write-tree` 拿到权威 tree sha
+    tz=+0800 且 message 不带尾换行 → 复现远端 sha ✓
+    tz=+0000 / -0000 / +0530      → 均不匹配 ✗
+
+所以远端 commit 对象里存的就是 `+0800`，重建时必须按原偏移量拼装。
+（同理，`message` 的尾换行也必须逐字节一致 —— 曾经因为 `rstrip("\n")` 造成
+「sha 对不上」的假象，被误归因成时区问题。）
+
+策略因此定为：
+
+  1. 本地 `git add -A` → `git write-tree` 拿到权威 tree sha 与全部条目
   2. 从 **git 对象库**取该 tree 引用的全部 blob 上传（不是读工作区！）
   3. POST /git/trees（完整条目、**不带 base_tree**）→ 断言 sha == 本地 tree sha
   4. POST /git/commits（parents = 远端当前 HEAD）→ 拿到远端 sha R
   5. 在本地按 R 的元数据重建 commit 对象（此时 tree 一定存在，安全）
      → `update-ref refs/heads/main R` + `refs/remotes/origin/main R`
 
-第 5 步让本地分支直接指向 R，本地临时提交被 R 取代但内容完全相同，
-因此工作区/索引状态不变，且本地与远端的头部永远一致（无 ahead/behind）。
+第 5 步让本地分支直接指向 R，本地与远端头部永远一致（无 ahead/behind），
+且不依赖「让 GitHub 复现本地 sha」这一不可靠前提 —— 只要时区候选能命中就成立，
+命中不了就报错退出、不动任何 ref。
 
 三个踩过的坑，都已被结构性消除
 -----------------------------
@@ -55,8 +64,9 @@ BRANCH = "main"
 SLUG = f"{OWNER}/{NAME}"
 
 IDENT_RE = re.compile(r"^(author|committer) (.*) <(.*)> (\d+) ([+-]\d{4})$")
-# GitHub 落地时用 UTC(+0000)；其余候选只是兜底
-TZ_CANDIDATES = ["+0000", "-0000", "+0800", "+0900", "+0530", "+0100"]
+# 用于重建远端 commit 对象时试算时区。实测本仓存的是 +0800（提交者本地时区），
+# 但 API 返回的 date 是归一化的 Z，无法直接读出真实偏移，故逐级试算兜底。
+TZ_CANDIDATES = ["+0800", "+0000", "-0000", "+0900", "+0530", "+0100"]
 
 
 # ---------------------------------------------------------------- 基础
@@ -136,7 +146,11 @@ def tree_entries(tree_sha):
 
 
 def local_ident():
-    """取 git 身份 + 当前时间，作为新 commit 的 author/committer。"""
+    """取 git 身份 + 当前时间，作为新 commit 的 author/committer。
+
+    同时返回我们写入的时区偏移（如 `+0800`）—— 远端会原样保留它，
+    因此重建 commit 对象时应当优先按这个偏移试算，而不是从 API 的 `...Z` 去猜。
+    """
     def cfg(k, d):
         rc, out, _ = g("config", "--get", k)
         return out.strip() or d
@@ -144,7 +158,8 @@ def local_ident():
     email = cfg("user.email", "andyXu1995@users.noreply.github.com")
     now = datetime.now(timezone(timedelta(hours=8))).replace(microsecond=0)
     ident = {"name": name, "email": email, "date": now.isoformat()}
-    return ident, ident
+    off = f"{now.strftime('%z')[:3]}{now.strftime('%z')[3:]}"   # +0800
+    return ident, ident, off
 
 
 def remote_head(tok):
@@ -182,20 +197,24 @@ def upload_blobs(entries, tok):
     return done
 
 
-def align_local(remote_sha, tok):
+def align_local(remote_sha, tok, tz_hint=None):
     """在本地重建远端 commit 对象，并把本地分支指向它。
 
-    安全性前提：该 commit 的 tree（以及 parent）在本地已存在 —— 由调用方断言。
+    安全性前提：该 commit 的 tree 在本地已存在 —— 由调用方断言。
+    `message` 必须逐字节使用 API 返回值（含/不含尾换行都要照搬），
+    否则拼出的对象 sha 会与远端不同。
     """
     code, c = api("GET", f"/repos/{SLUG}/git/commits/{remote_sha}", tok=tok)
     if code != 200:
         raise RuntimeError(f"读取远端 commit {remote_sha[:7]} 失败：HTTP {code}")
     tree = c["tree"]["sha"]
     parents = [p["sha"] for p in c.get("parents") or []]
-    ts, off = iso_to_tz_offset(c["author"]["date"])
+    ts, _off = iso_to_tz_offset(c["author"]["date"])
     msg = c["message"]
 
-    cands = ([off] if off in TZ_CANDIDATES else []) + [t for t in TZ_CANDIDATES if t != off]
+    cands = list(TZ_CANDIDATES)
+    if tz_hint and tz_hint not in cands:
+        cands.insert(0, tz_hint)
     for tz in cands:
         head = f"tree {tree}\n"
         for p in parents:
@@ -240,7 +259,7 @@ def publish(message, tok=None, root=False):
         raise RuntimeError(f"远端 tree {tree['sha'][:8]} != 本地 tree {tree_sha[:8]}"
                            f"，已中止，未改动远端 ref")
 
-    author, committer = local_ident()
+    author, committer, tz_hint = local_ident()
     parents = [] if root else [rhead]
     code, commit = api("POST", f"/repos/{SLUG}/git/commits",
                        {"message": message, "tree": tree["sha"],
@@ -256,7 +275,7 @@ def publish(message, tok=None, root=False):
         raise RuntimeError(f"远端 ref 未指向新 commit（实际 {ref.get('object', {}).get('sha')}）")
 
     # tree 已在本地（来自 write-tree），重建 commit 对象是安全的
-    tz = align_local(commit["sha"], tok)
+    tz = align_local(commit["sha"], tok, tz_hint=tz_hint)
     return {"up_to_date": False, "commit": commit["sha"], "prev": rhead, "root": root,
             "tree": tree_sha, "files": len(entries), "blobs": nblobs, "tz": tz}
 
