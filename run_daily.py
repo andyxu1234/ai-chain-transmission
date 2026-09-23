@@ -56,7 +56,9 @@ def main(force=False, use_ai=True):
     if use_ai:
         attrib.enrich(data)        # 失败自动降级为 None，不阻断
     else:
-        data["attribution"] = None
+        # --no-ai 的语义是"不调 LLM"，而不是"清掉已有解读"：
+        # 沿用上一份快照里的归因，避免为了快跑一次就把已发布的解读抹掉。
+        data["attribution"] = (prev or {}).get("attribution")
 
     engine.save(data)              # 落盘 data/snapshot-*.json + latest.json
     render.main(data)              # 渲染 index.html + reports/{cn_date}.html
