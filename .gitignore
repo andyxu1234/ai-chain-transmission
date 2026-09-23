@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.log
+_probe*
+_verify*
+.workbuddy/
+data/cache/
+# 凭证：绝不提交（公开仓库）
+.env
+.env.*
+!.env.example

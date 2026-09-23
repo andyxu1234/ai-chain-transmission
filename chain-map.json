@@ -1,0 +1,156 @@
+{
+  "version": "1.0",
+  "updated": "2026-09-23",
+  "note": "AI 全产业链 8 大环节 × 美股锚点 → A股/港股跟随 映射表。骨架取自《AI全产业链中美企业对比与投资意见研究报告》，权重按环节内代表性分配，环节内权重和为 1。",
+  "baseline": {
+    "cn": "sh000300",
+    "cn_name": "沪深300",
+    "cn_growth": "sz399006",
+    "cn_growth_name": "创业板指",
+    "us": "usIXIC",
+    "us_name": "纳斯达克综合"
+  },
+  "sectors": [
+    {
+      "id": "chip",
+      "name": "AI芯片/算力",
+      "icon": "chip",
+      "logic": "算力需求景气与出口管制定价权；中美逻辑部分背离（管制利好国产替代）",
+      "prior": "medium",
+      "us": [
+        { "code": "usNVDA", "name": "英伟达", "w": 0.50 },
+        { "code": "usAVGO", "name": "博通", "w": 0.25 },
+        { "code": "usAMD", "name": "AMD", "w": 0.25 }
+      ],
+      "cn": [
+        { "code": "sh688256", "name": "寒武纪", "w": 0.50 },
+        { "code": "sh688041", "name": "海光信息", "w": 0.50 }
+      ]
+    },
+    {
+      "id": "server",
+      "name": "AI服务器/整机",
+      "icon": "server",
+      "logic": "代工链直接映射，工业富联与 NVIDIA 整机柜绑定最深，传导最直接",
+      "prior": "strong",
+      "us": [
+        { "code": "usDELL", "name": "戴尔科技", "w": 0.40 },
+        { "code": "usSMCI", "name": "超微电脑", "w": 0.30 },
+        { "code": "usHPE", "name": "慧与科技", "w": 0.30 }
+      ],
+      "cn": [
+        { "code": "sh601138", "name": "工业富联", "w": 0.40 },
+        { "code": "sz000977", "name": "浪潮信息", "w": 0.25 },
+        { "code": "sz000938", "name": "紫光股份", "w": 0.20 },
+        { "code": "sh603019", "name": "中科曙光", "w": 0.15 }
+      ]
+    },
+    {
+      "id": "optical",
+      "name": "光模块/网络",
+      "icon": "optical",
+      "logic": "中国全球竞争力最强环节，与海外云厂 capex 同源，传导强度最高",
+      "prior": "strong",
+      "us": [
+        { "code": "usCOHR", "name": "Coherent", "w": 0.35 },
+        { "code": "usLITE", "name": "Lumentum", "w": 0.35 },
+        { "code": "usAVGO", "name": "博通", "w": 0.30 }
+      ],
+      "cn": [
+        { "code": "sz300308", "name": "中际旭创", "w": 0.35 },
+        { "code": "sz300502", "name": "新易盛", "w": 0.35 },
+        { "code": "sz300394", "name": "天孚通信", "w": 0.20 },
+        { "code": "sz000988", "name": "华工科技", "w": 0.10 }
+      ]
+    },
+    {
+      "id": "datacenter",
+      "name": "数据中心/电力散热",
+      "icon": "dc",
+      "logic": "AI 功耗驱动供电散热增量，中美项目节奏不同步，传导中等",
+      "prior": "medium",
+      "us": [
+        { "code": "usVRT", "name": "维谛技术", "w": 0.50 },
+        { "code": "usEQIX", "name": "Equinix", "w": 0.25 },
+        { "code": "usDLR", "name": "Digital Realty", "w": 0.25 }
+      ],
+      "cn": [
+        { "code": "sz002837", "name": "英维克", "w": 0.30 },
+        { "code": "sz300442", "name": "润泽科技", "w": 0.25 },
+        { "code": "hk09698", "name": "万国数据-SW", "w": 0.25 },
+        { "code": "sz002851", "name": "麦格米特", "w": 0.20 }
+      ]
+    },
+    {
+      "id": "llm",
+      "name": "基础大模型",
+      "icon": "llm",
+      "logic": "以情绪与叙事传导为主，无直接业绩映射，传导弱",
+      "prior": "weak",
+      "us": [
+        { "code": "usMSFT", "name": "微软", "w": 0.35 },
+        { "code": "usGOOGL", "name": "Alphabet", "w": 0.35 },
+        { "code": "usMETA", "name": "Meta", "w": 0.30 }
+      ],
+      "cn": [
+        { "code": "hk09988", "name": "阿里巴巴-W", "w": 0.40 },
+        { "code": "hk00700", "name": "腾讯控股", "w": 0.40 },
+        { "code": "hk09888", "name": "百度集团-SW", "w": 0.20 }
+      ]
+    },
+    {
+      "id": "cloud",
+      "name": "云计算",
+      "icon": "cloud",
+      "logic": "北美云厂 capex 指引直接影响国内算力链预期，传导中等",
+      "prior": "medium",
+      "us": [
+        { "code": "usAMZN", "name": "亚马逊", "w": 0.30 },
+        { "code": "usMSFT", "name": "微软", "w": 0.30 },
+        { "code": "usGOOGL", "name": "Alphabet", "w": 0.25 },
+        { "code": "usORCL", "name": "Oracle", "w": 0.15 }
+      ],
+      "cn": [
+        { "code": "hk09988", "name": "阿里巴巴-W", "w": 0.50 },
+        { "code": "hk00700", "name": "腾讯控股", "w": 0.50 }
+      ]
+    },
+    {
+      "id": "app",
+      "name": "AI应用/软件",
+      "icon": "app",
+      "logic": "变现能力对标，中美客单价差 10 倍，传导以估值情绪为主",
+      "prior": "medium",
+      "us": [
+        { "code": "usMSFT", "name": "微软", "w": 0.25 },
+        { "code": "usADBE", "name": "Adobe", "w": 0.20 },
+        { "code": "usCRM", "name": "Salesforce", "w": 0.20 },
+        { "code": "usNOW", "name": "ServiceNow", "w": 0.20 },
+        { "code": "usPLTR", "name": "Palantir", "w": 0.15 }
+      ],
+      "cn": [
+        { "code": "sh688111", "name": "金山办公", "w": 0.35 },
+        { "code": "sz002230", "name": "科大讯飞", "w": 0.30 },
+        { "code": "sh600588", "name": "用友网络", "w": 0.20 },
+        { "code": "hk00268", "name": "金蝶国际", "w": 0.15 }
+      ]
+    },
+    {
+      "id": "edge",
+      "name": "端侧AI",
+      "icon": "edge",
+      "logic": "渗透率对标，受内存涨价与出货量扰动，传导弱",
+      "prior": "weak",
+      "us": [
+        { "code": "usAAPL", "name": "苹果", "w": 0.50 },
+        { "code": "usQCOM", "name": "高通", "w": 0.30 },
+        { "code": "usINTC", "name": "英特尔", "w": 0.20 }
+      ],
+      "cn": [
+        { "code": "hk01810", "name": "小米集团-W", "w": 0.45 },
+        { "code": "hk00992", "name": "联想集团", "w": 0.30 },
+        { "code": "sh688036", "name": "传音控股", "w": 0.25 }
+      ]
+    }
+  ]
+}
